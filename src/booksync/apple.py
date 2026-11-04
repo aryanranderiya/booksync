@@ -109,12 +109,22 @@ def import_file(path: Path, settle: float = 1.5) -> bool:
     return True
 
 
-def import_files(paths: list[Path]) -> bool:
-    """Import a batch in one shot, in the background, without taking focus."""
+def import_files(paths: list[Path], settle: float = 4.0) -> bool:
+    """Import a batch with one `open` call.
+
+    Books opens a reader window per file and there is no silent import API. We never
+    synthesize keystrokes to close them: that hits whatever app is frontmost. If Books
+    was not already running we quit it afterwards, which is the only safe cleanup.
+    """
     if not paths:
         return True
+    was_running = running()
     result = subprocess.run(
         ["open", "-g", "-a", "Books", *[str(p) for p in paths]],
         capture_output=True, text=True,
     )
+    time.sleep(settle)
+    if not was_running:
+        quit_app()
+        time.sleep(1.5)
     return result.returncode == 0
