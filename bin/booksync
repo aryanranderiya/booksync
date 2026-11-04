@@ -1,0 +1,5 @@
+#!/bin/sh
+# Thin wrapper so `booksync` works without activating the venv.
+set -e
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+exec "$ROOT/.venv/bin/booksync" "$@"
