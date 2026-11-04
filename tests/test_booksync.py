@@ -4,9 +4,9 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tests"))
 
-import make_test_epub  # noqa: E402
+import fixtures as make_test_epub  # noqa: E402
 from booksync import epub  # noqa: E402
 from booksync.state import Record, State  # noqa: E402
 from booksync.util import as_isbn, normalize, sanitize  # noqa: E402

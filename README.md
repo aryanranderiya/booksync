@@ -1,92 +1,171 @@
 # booksync
 
-Moves the books you uploaded to Google Play Books into Apple Books on your Mac.
+**Your Google Play Books uploads, in Apple Books, on your Mac.**
 
-Google Play Books has no API and neither does Apple Books, so this drives the real
-Play Books web page with the Google session already signed in on this machine (Arc,
-falling back to Chrome), downloads each upload, and hands the files to Books.
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Platform: macOS](https://img.shields.io/badge/platform-macOS-lightgrey.svg)
+![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)
 
-## Requirements
+---
 
-- macOS with Google Chrome installed
-- A signed-in session at `play.google.com` in Arc or Chrome
-- `uv` (`brew install uv`)
+You uploaded a pile of EPUBs and PDFs to Google Play Books. Apple Books can't see
+them, and neither app offers a way to move them across. Right now your options are
+clicking Export on 70 books one at a time, or giving up.
+
+This closes that gap. One command checks your Play Books library, downloads whatever
+is new, and adds it to Apple Books. Run it again next month and it only picks up the
+books you added since.
+
+```
+$ booksync sync
+session       arc, 131 cookies
+library       74 book(s)
+to fetch      2
+  [1/2] The Mom Test
+  [2/2] Rich Dad, Poor Dad
+importing     2 book(s) in 1 batch(es)
+
+2 imported · 0 already in books · 0 unexportable · 72 unchanged · 0 failed
+```
+
+## What you need
+
+- A Mac
+- Google Chrome installed
+- Signed in to Google Play Books in **Arc** or Chrome
+- [uv](https://docs.astral.sh/uv/) (`brew install uv`)
 
 ## Install
 
 ```sh
+git clone https://github.com/aryanranderiya/booksync.git
+cd booksync
 uv sync
 ```
 
-The first run asks for keychain access to "Arc Safe Storage". Click **Always Allow**.
-That key decrypts your own cookies locally; nothing leaves the machine except requests
-to Google.
-
-## Commands
+That gives you `bin/booksync`. To get a plain `booksync` command instead:
 
 ```sh
-booksync sync                 # fetch new uploads and import them
-booksync sync --dry-run       # list what would be fetched
-booksync sync --only "mom test"
-booksync sync --limit 5
-booksync shelf                # every book in Play Books and whether it is synced
-booksync status               # counts and last run
-booksync covers               # EPUBs missing a cover
-booksync covers --reimport    # fix covers and replace those books in Books
-booksync import <file|folder> # import local EPUB/PDF files
-booksync adopt                # mark books already in Books as synced
-booksync session              # check the browser session still works
-booksync doctor               # check this machine is set up
+uv tool install .
 ```
 
-`bin/booksync` is a wrapper, so it works without activating the virtualenv.
-
-## How syncing works
-
-`booksync sync` is idempotent and safe to run whenever.
-
-1. Reads your Google cookies from Arc (or Chrome) and decrypts them locally.
-2. Opens `play.google.com/books` in headless Chrome with that session.
-3. Skips every book already recorded in the state database.
-4. For each new book: opens the tile menu, clicks Export, picks EPUB or PDF, saves it.
-5. Validates the file and drops DRM-protected store purchases.
-6. Gives every EPUB a real cover if Google only has a placeholder.
-7. Archives to `~/Books/PlayBooks/` and imports to Books in one batch.
-
-Identity is the file hash, not the title, so re-downloading the same book never
-creates a duplicate. Books already present in Apple Books are matched by ISBN, then by
-title and author, so nothing is imported twice.
-
-Books that cannot be exported (store purchases, DRM) are recorded once and skipped on
-later runs. `--retry-skipped` tries them again.
-
-## Where things live
-
-```
-~/Library/Application Support/booksync/state.db   what has been synced
-~/Books/PlayBooks/                                canonical archive
-~/Library/Mobile Documents/iCloud~com~apple~iBooks/Documents   Apple Books copies
-```
-
-The archive is the source of truth. Apple Books is a copy, so if its library ever goes
-wrong, point `booksync import` at the archive.
-
-## Limits
-
-- Uploads only. Books bought from the Play Store are DRM-encrypted and Apple Books
-  cannot open them.
-- Books opens a reader window when importing a file; it has no silent import API. The
-  app quits itself afterwards if booksync started it, otherwise close the windows.
-- Highlights and notes stay in Play Books.
-- The Play Books page can change. If `shelf` returns nothing, the selectors in
-  `src/booksync/fetch.py` need a look.
-
-## Automation
+## First run
 
 ```sh
-make agent        # daily 09:15 sync via launchd
+booksync shelf
+```
+
+This lists everything in your Play Books library and whether it is already synced.
+It also tells you which browser it borrowed your login from.
+
+The first run may ask for your macOS password. That is your Mac unlocking the key
+that protects your browser's cookies. Choose **Always Allow** so it only asks once.
+
+Then:
+
+```sh
+booksync sync --dry-run   # see what it would do
+booksync sync             # do it
+```
+
+## Everyday use
+
+```sh
+booksync sync              # fetch anything new and add it to Apple Books
+booksync shelf             # what's in Play Books, synced or not
+booksync status            # how many are synced, when it last ran
+booksync import ~/Downloads  # add loose EPUB/PDF files you already have
+```
+
+Handy extras:
+
+```sh
+booksync sync --only "mom test"   # one book
+booksync sync --limit 5           # a few at a time
+booksync sync --dry-run           # no changes, just the plan
+booksync covers                   # find books with a missing cover
+booksync covers --reimport        # fix them and swap them into Books
+booksync doctor                   # check the setup
+```
+
+## What a sync actually does
+
+1. Grabs your Google login from Arc (or Chrome) so it doesn't ask you to sign in.
+2. Opens Play Books in a hidden browser window.
+3. Skips every book it has already handled.
+4. Opens each new book's menu, hits Export, and downloads the EPUB or PDF.
+5. Checks the file is real and throws away store purchases, which are copy-protected.
+6. Makes sure the book has a cover worth looking at.
+7. Saves a copy to `~/Books/PlayBooks/` and adds it to Apple Books.
+
+Running `booksync sync` twice does nothing the second time. Books are tracked by the
+file itself and by ISBN, so you never end up with duplicates.
+
+Books it can't export are remembered and skipped on later runs. `--retry-skipped`
+tries them again.
+
+## Is it safe?
+
+It reads the Google cookies your own browser already has, unlocks them on your Mac,
+and uses them to sign in to Google Play Books. Nothing is sent anywhere except to
+Google, as you. There is no server, no account, no telemetry.
+
+Your `~/Books/PlayBooks` folder is the master copy. If Apple Books ever gets confused,
+you can rebuild from it with `booksync import ~/Books/PlayBooks`.
+
+## What it can't do
+
+- **Books you bought from the Play Store.** They're copy-protected and Apple Books
+  won't open them. Only your own uploads work.
+- **Highlights and notes.** They stay in Play Books.
+- **Import without a window.** Apple Books has no quiet import, so it flashes a reader
+  window while adding books. If Books was closed, booksync closes it again afterwards.
+
+## Covers
+
+Google gives some uploads a tiny grey placeholder instead of cover art. booksync spots
+that and draws a clean typographic cover in New York, tinted per title, so the shelf in
+Apple Books still looks like a shelf.
+
+## Run it on a schedule (optional)
+
+```sh
+make agent        # every day at 09:15
 make agent-remove
 ```
 
-Raycast commands are in `raycast/`. Add that folder in Raycast > Extensions > Script
-Commands for a one-keystroke sync and an inline status item.
+If you use [Raycast](https://raycast.com), add the `raycast/` folder under
+Extensions → Script Commands. You get a one-keystroke sync and an inline status line.
+
+## Troubleshooting
+
+**"not signed in" / empty shelf**
+Sign in at play.google.com in Arc or Chrome, then run `booksync session` to confirm.
+
+**Keychain prompt every time**
+Open Keychain Access, find "Arc Safe Storage", and set access to always allow.
+
+**A book is missing**
+`booksync shelf` marks it `skip`. Those are store purchases or files Google won't
+export. `booksync sync --retry-skipped` forces another attempt.
+
+**Apple Books shows a blank cover**
+`booksync covers --reimport`.
+
+## Development
+
+```sh
+uv sync
+uv run pytest
+```
+
+Layout: `fetch.py` drives Play Books, `cookies.py` handles the browser login,
+`epub.py` and `cover.py` deal with files, `apple.py` talks to Books, `state.py` keeps
+track of what's done.
+
+Pull requests welcome. This scrapes a Google web page, so selectors in `fetch.py` are
+the part most likely to break when Google ships a redesign.
+
+## License
+
+[MIT](LICENSE)
