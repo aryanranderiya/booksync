@@ -289,6 +289,29 @@ def cmd_covers(cfg: Config, args) -> int:
     return 0 if done == len(fixed) else 1
 
 
+def cmd_adopt(cfg: Config, args) -> int:
+    """Reconcile state with what is actually in Apple Books."""
+    state = State(cfg.db_path)
+    rows = [dict(r) for r in state.conn.execute(
+        "SELECT sha256, title, apple_key FROM books WHERE imported_at IS NULL")]
+    if not rows:
+        say("nothing to reconcile")
+        state.close()
+        return 0
+    keys = apple.library_keys()
+    done = 0
+    for row in rows:
+        if row["apple_key"] in keys:
+            state.mark_imported(row["sha256"])
+            done += 1
+    state.close()
+    say(f"{done}/{len(rows)} marked imported")
+    left = len(rows) - done
+    if left:
+        say(s(f"{left} not in Apple Books yet, run sync to retry", YELLOW))
+    return 0
+
+
 def cmd_status(cfg: Config, args) -> int:
     state = State(cfg.db_path)
     summary = state.summary()
@@ -377,6 +400,8 @@ def build_parser():
     status.add_argument("--oneline", action="store_true")
     status.set_defaults(func=cmd_status)
     sub.add_parser("doctor", help="check this machine is set up").set_defaults(func=cmd_doctor)
+    sub.add_parser("adopt", help="mark books already in Apple Books as synced").set_defaults(
+        func=cmd_adopt)
 
     covers = sub.add_parser("covers", help="find and fix EPUBs with no cover")
     covers.add_argument("--reimport", action="store_true",
